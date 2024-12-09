@@ -4,6 +4,7 @@ def DEPLOYER_KEY_URI = ""
 
 pipeline {
     agent any
+
     environment {
         AWS_ACCESS_KEY_ID     = credentials('jenkins_aws_access_key_id')
         AWS_SECRET_ACCESS_KEY = credentials('jenkins_aws_secret_access_key')
@@ -12,6 +13,7 @@ pipeline {
         IMAGE_REPO            = "${ECR_REPO_URL}/${ECR_REPO_NAME}"
         AWS_REGION            = "us-east-1"
     }
+
     stages {
         stage('Provision Server and Database') {
             steps {
@@ -58,6 +60,7 @@ pipeline {
                 }
             }
         }
+
         stage('Update Frontend Configuration') {
             steps {
                 script {
@@ -73,6 +76,7 @@ pipeline {
                 }
             }
         }
+
         stage('Update Backend Configuration') {
             steps {
                 script {
@@ -99,6 +103,143 @@ pipeline {
                     }
                 }
             }
+        }
+
+        stage('Create Database in RDS') {
+            steps {
+                script {
+                    sh """
+                        mysql -h ${RDS_ENDPOINT} -P 3306 -u dbuser -pDBpassword2024 -e "CREATE DATABASE IF NOT EXISTS enis_tp;"
+                        mysql -h ${RDS_ENDPOINT} -P 3306 -u dbuser -pDBpassword2024 -e "SHOW DATABASES;"
+                    """
+                }
+            }
+        }
+
+        stage('Build Frontend Docker Image') {
+            steps {
+                dir('enis-app-tp/frontend') {
+                    script {
+                        echo 'Building Frontend Docker Image...'
+                        def frontendImage = docker.build('frontend-app')
+                        echo "Built Image: ${frontendImage.id}"
+                    }
+                }
+            }
+        }
+
+        stage('Build Backend Docker Image') {
+            steps {
+                dir('enis-app-tp/backend') {
+                    script {
+                        echo 'Building Backend Docker Image...'
+                        def backendImage = docker.build('backend-app')
+                        echo "Built Image: ${backendImage.id}"
+                    }
+                }
+            }
+        }
+
+        stage('Login to AWS ECR') {
+            steps {
+                script {
+                    sh """
+                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO_URL}
+                    """
+                }
+            }
+        }
+
+        stage('Tag and Push Frontend Image') {
+            steps {
+                script {
+                    echo 'Tagging and pushing Frontend Image...'
+                    sh "docker tag frontend-app:latest ${IMAGE_REPO}/frontend-app"
+                    sh "docker push ${IMAGE_REPO}/frontend-app"
+                }
+            }
+        }
+
+        stage('Tag and Push Backend Image') {
+            steps {
+                script {
+                    echo 'Tagging and pushing Backend Image...'
+                    sh "docker tag backend-app:latest ${IMAGE_REPO}/backend-app"
+                    sh "docker push ${IMAGE_REPO}/backend-app"
+                }
+            }
+        }
+
+        stage('Download SSH Key from S3') {
+            steps {
+                script {
+                    dir('ansible') {
+                        sh """
+                            # Check and delete the existing key if it exists
+                            if [ -f "terraform_key.pem" ]; then
+                                echo "Deleting existing terraform_key.pem"
+                                rm terraform_key.pem
+                            fi
+                            # Download the SSH key from S3
+                            aws s3 cp ${DEPLOYER_KEY_URI} terraform_key.pem
+                            # Set the proper permissions for the private key
+                            chmod 600 terraform_key.pem
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Update Hosts File') {
+            steps {
+                script {
+                    dir('ansible') {
+                        sh """
+                            if [ -f "hosts" ]; then
+                                echo "Found hosts file at $(pwd)"
+                                sed -i "2s|.*|${EC2_PUBLIC_IP}|" hosts
+                                echo "Updated hosts file:"
+                                cat hosts
+                            else
+                                echo "hosts file not found in $(pwd)!"
+                                exit 1
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Run Ansible Playbook') {
+            steps {
+                script {
+                    dir('ansible') {
+                        sh """
+                            if [ -f "docker_deploy_playbook.yml" ]; then
+                                echo "Found playbook docker_deploy_playbook.yml"
+                                # Ensure community.docker collection is installed
+                                ansible-galaxy collection install community.docker --force
+                                # Run the Ansible playbook
+                                ansible-playbook -i hosts docker_deploy_playbook.yml
+                            else
+                                echo "Playbook docker_deploy_playbook.yml not found!"
+                                exit 1
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+    }
+    post {
+        success {
+            script {
+                def instanceUrl = "http://${EC2_PUBLIC_IP}:81"
+                echo "The instance is successfully deployed. Access it here: ${instanceUrl}"
+            }
+        }
+        failure {
+            echo "The pipeline failed. Please check the logs for details."
         }
     }
 }
