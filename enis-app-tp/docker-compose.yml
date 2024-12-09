@@ -1,0 +1,65 @@
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: 12345678hm
+      MYSQL_DATABASE: enis_tp
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql # Use the preserved volume to keep data
+    networks:
+      - my_bridge
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  backend-app:
+    image: backend-app:latest # Use the already built image
+    container_name: backend-app
+    restart: always
+    ports:
+      - "9000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - my_bridge
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/admin/login/?next=/admin/ || exit 1"] # Use localhost to check health
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  frontend-app:
+    image: frontend-app:latest # Use the already built image
+    container_name: frontend-app
+    restart: always
+    ports:
+      - "81:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      backend-app:
+        condition: service_healthy
+    networks:
+      - my_bridge
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost || exit 1"] # Use localhost to check health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  my_bridge:
+    external: true
+
+volumes:
+  mysql_data:
+    external:
+      name: 657f7ce41a3bdaf27ad7acf2ae5c82266162d9c9d6b058e6d351d85d2804111d

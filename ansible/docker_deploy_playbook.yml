@@ -1,0 +1,146 @@
+---
+# Basic Web Server Setup
+- name: Basic Web Server Setup
+  hosts: servers
+  gather_facts: no
+  become: yes
+
+  tasks:
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for:
+        port: 22
+        delay: 10
+        timeout: 100
+        search_regex: OpenSSH
+
+# Install Docker, Docker-compose, and AWS CLI
+- name: Install Docker, Docker-compose, and AWS CLI
+  hosts: servers
+  become: yes
+  vars_files:
+    - ansible-vars.yaml
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: "{{ cache_time }}"
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - "{{ docker_package_name }}"
+          - docker-compose
+          - curl
+          - unzip
+        state: present
+
+    - name: Ensure Docker service is started and enabled
+      ansible.builtin.systemd:
+        name: "{{ docker_service_name }}"
+        state: started
+        enabled: yes
+
+    - name: Add ubuntu user to Docker group
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Reset connection to apply user group changes
+      meta: reset_connection
+
+    - name: Check Docker version
+      ansible.builtin.command: docker --version
+      register: docker_version_output
+
+    - name: Display Docker version
+      ansible.builtin.debug:
+        msg: "Docker version: {{ docker_version_output.stdout }}"
+
+    - name: Install AWS CLI if not already installed
+      block:
+        - name: Check if AWS CLI is installed
+          ansible.builtin.command: aws --version
+          register: aws_cli_check
+          ignore_errors: yes
+
+        - name: Download AWS CLI installer
+          ansible.builtin.get_url:
+            url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+            dest: /tmp/awscliv2.zip
+          when: aws_cli_check.failed
+
+        - name: Unzip AWS CLI installer
+          ansible.builtin.unarchive:
+            src: /tmp/awscliv2.zip
+            dest: /tmp/
+            remote_src: yes
+          when: aws_cli_check.failed
+
+        - name: Run AWS CLI installer
+          ansible.builtin.command: /tmp/aws/install -i /usr/local/aws-cli -b /usr/local/bin
+          when: aws_cli_check.failed
+
+      always:
+        - name: Verify AWS CLI installation
+          ansible.builtin.command: aws --version
+          register: aws_cli_version
+
+        - name: Display AWS CLI version
+          ansible.builtin.debug:
+            msg: "AWS CLI version: {{ aws_cli_version.stdout }}"
+
+# Pull Docker images and configure containers
+- name: Pull Docker images and configure containers
+  hosts: servers
+  become: yes
+  vars_files:
+    - ansible-vars.yaml
+
+  tasks:
+    - name: Log in to Amazon ECR
+      shell: |
+        aws ecr get-login-password --region {{ region }} | docker login --username AWS --password-stdin {{ ecr_url }}
+      args:
+        executable: /bin/bash
+
+    - name: Pull Docker images
+      ansible.builtin.docker_image:
+        name: "{{ ecr_url }}/{{ ecr_repository }}"
+        tag: "{{ item }}"
+        source: pull
+      loop:
+        - "{{ frontend_image_tag }}"
+        - "{{ backend_image_tag }}"
+
+    - name: Display pulled Docker images
+      ansible.builtin.command: docker images
+      register: docker_images_output
+
+    - name: Show Docker images
+      ansible.builtin.debug:
+        msg: "{{ docker_images_output.stdout }}"
+
+    - name: Create Docker network
+      community.docker.docker_network:
+        name: "{{ docker_network_name }}"
+        state: present
+
+    - name: Copy Docker Compose file to the server
+      ansible.builtin.copy:
+        src: "{{ compose_local_path }}"
+        dest: "{{ compose_remote_path }}"
+
+    - name: Start Docker containers using Docker Compose
+      community.docker.docker_compose:
+        project_src: "{{ project_src_path }}"
+        state: present
+
+    - name: Run migrations in the backend container
+      block:
+        - name: Make migrations
+          ansible.builtin.command: docker exec {{ backend_container_name }} python manage.py makemigrations
+
+        - name: Apply migrations
+          ansible.builtin.command: docker exec {{ backend_container_name }} python manage.py migrate
