@@ -96,13 +96,13 @@ WSGI_APPLICATION = "backend.wsgi.application"
 # Database Configuration
 # -----------------------
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.mysql",
-        "NAME": os.getenv("DB_NAME", "enis_tp"),
-        "USER": os.getenv("DB_USER", "dbuser"),
-        "PASSWORD": os.getenv("DB_PASSWORD", "DBpassword2024"),
-        "HOST": os.getenv("DB_HOST", "rds-endpoint"),
-        "PORT": os.getenv("DB_PORT", "3306"),
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'enis_tp',
+        'USER': 'dbuser',
+        'PASSWORD': 'DBpassword2024',
+        'HOST': DB_HOST,
+        'PORT': 3306,
     }
 }
 

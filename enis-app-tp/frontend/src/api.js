@@ -1,10 +1,10 @@
 import axios from "axios";
 import { ACCESS_TOKEN } from "./constants";
-
-const apiUrl = "http://54.167.204.203:8000"; // URL du backend
+import { API_BASE_URL } from "./config";
+const apiUrl= "http";
 
 const api = axios.create({
-  baseURL: apiUrl
+  baseURL: API_BASE_URL
 });
 
 api.interceptors.request.use(
