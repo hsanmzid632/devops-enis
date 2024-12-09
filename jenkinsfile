@@ -7,11 +7,11 @@ pipeline {
             AWS_ACCESS_KEY_ID = credentials('jenkins_aws_access_key_id')
             AWS_SECRET_ACCESS_KEY = credentials('jenkins_aws_secret_access_key')
             AWS_CREDENTIALS_ID = 'aws-credentials'
-            ECR_REPO_URL = '682033493357.dkr.ecr.us-east-1.amazonaws.com'
-            ECR_REPO_NAME = 'test'
+            ECR_REPO_URL = '891612579726.dkr.ecr.us-east-1.amazonaws.com'
+            ECR_REPO_NAME = 'enis-app'
             IMAGE_REPO = "${ECR_REPO_URL}/${ECR_REPO_NAME}"
-            IMAGE_REPO_FRONTEND = "${IMAGE_REPO}:frontend-1.0"
-            IMAGE_REPO_BACKEND = "${IMAGE_REPO}:backend-1.0"
+            IMAGE_REPO_FRONTEND = "${IMAGE_REPO}:frontend1.0"
+            IMAGE_REPO_BACKEND = "${IMAGE_REPO}:backend1.0"
             AWS_REGION = "us-east-1"
 
         }
@@ -24,7 +24,7 @@ pipeline {
                          // Apply Terraform configuration
                          sh "terraform apply --auto-approve"
                      }
-                     dir('my-terraform-project') {
+                     dir('my-terraform-project/my-project') {
                          // Initialize Terraform
                          sh "terraform init"
                          sh "terraform plan -lock=false"
@@ -171,16 +171,16 @@ pipeline {
                     dir('ansible') {
                         sh """
                         # Check and delete the existing key if it exists
-                        if [ -f "deployer_key.pem" ]; then
-                            echo "Deleting existing deployer_key.pem"
-                            rm deployer_key.pem
+                        if [ -f "terraform_key.pem" ]; then
+                            echo "Deleting existing terraform_key.pem"
+                            rm terraform_key.pem
                         fi
 
                         # Download the SSH key from S3
-                        aws s3 cp ${DEPLOYER_KEY_URI} deployer_key.pem
+                        aws s3 cp ${DEPLOYER_KEY_URI} terraform_key.pem
 
                         # Set the proper permissions for the private key
-                        chmod 600 deployer_key.pem
+                        chmod 600 terraform_key.pem
                         """
                     }
                 }
@@ -206,9 +206,9 @@ pipeline {
             }
         }
 
-//  for linux users
+// for linux users
 
-//         stage('Check Ansible Version') {
+ //       stage('Check Ansible Version') {
 //             steps {
 //                 script {
 //                     sh """
