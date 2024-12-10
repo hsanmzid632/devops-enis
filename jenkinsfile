@@ -178,12 +178,12 @@ pipeline {
                     dir('ansible') {
                         sh """
                             # Check and delete the existing key if it exists
-                            if [ -f "terraform_key.pem" ]; then
-                                echo "Deleting existing terraform_key.pem"
-                                rm terraform_key.pem
+                            if [ -f "terraform-key.pem" ]; then
+                                echo "Deleting existing terraform-key.pem"
+                                rm terraform-key.pem
                             fi
                             # Download the SSH key from S3
-                            aws s3 cp ${DEPLOYER_KEY_URI} terraform_key.pem
+                            aws s3 cp ${DEPLOYER_KEY_URI} terraform-key.pem
                             # Set the proper permissions for the private key
                             chmod 600 terraform-key.pem
                         """
