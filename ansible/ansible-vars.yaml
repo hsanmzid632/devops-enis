@@ -14,3 +14,8 @@ compose_local_path: "/var/lib/jenkins/workspace/deploy_note_app/ansible/docker-c
 compose_remote_path: "/home/ubuntu/docker-compose.yaml"
 project_src_path: "/home/ubuntu"
 backend_container_name: "backend-app"
+# app credentials
+
+superuser_username: "admin"
+superuser_email: "admin@example.com"
+superuser_password: "SuperSecretPassword"
