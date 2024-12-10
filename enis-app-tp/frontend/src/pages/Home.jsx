@@ -54,7 +54,7 @@ function Home() {
                     <Note note={note} onDelete={deleteNote} key={note.id} />
                 ))}
             </div>
-            <h2>Create a Note</h2>
+            <h2>Create a Note/hsan</h2>
             <form onSubmit={createNote}>
                 <label htmlFor="title">Title:</label>
                 <br />
