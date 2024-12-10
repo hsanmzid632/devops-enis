@@ -156,8 +156,8 @@ pipeline {
             steps {
                 script {
                     echo 'Tagging and pushing Frontend Image...'
-                    sh "docker tag frontend-app:latest ${IMAGE_REPO}/frontend-app"
-                    sh "docker push ${IMAGE_REPO}/frontend-app"
+                    sh "docker tag frontend-app:latest ${IMAGE_REPO_FRONTEND}"
+                    sh "docker push ${IMAGE_REPO_FRONTEND}"
                 }
             }
         }
@@ -166,8 +166,8 @@ pipeline {
             steps {
                 script {
                     echo 'Tagging and pushing Backend Image...'
-                    sh "docker tag backend-app:latest ${IMAGE_REPO}/backend-app"
-                    sh "docker push ${IMAGE_REPO}/backend-app"
+                    sh "docker tag backend-app:latest ${IMAGE_REPO_BACKEND}"
+                    sh "docker push ${IMAGE_REPO_BACKEND}"
                 }
             }
         }
