@@ -1,103 +1,118 @@
 ---
-# Basic Web Server Setup
 - name: Basic Web Server Setup
   hosts: servers
-  gather_facts: no
+  gather_facts: False
   become: yes
 
   tasks:
-    - name: Wait for SSH to become available
+    - name: Ensure SSH connection is available
       ansible.builtin.wait_for:
         port: 22
         delay: 10
         timeout: 100
         search_regex: OpenSSH
+        host: '{{ ansible_host | default(inventory_hostname) }}'
+      vars:
+        ansible_connection: local
+      become: no
 
-# Install Docker, Docker-compose, and AWS CLI
-- name: Install Docker, Docker-compose, and AWS CLI
+- name: Install Docker and Docker-compose
   hosts: servers
   become: yes
   vars_files:
     - ansible-vars.yaml
 
   tasks:
-    - name: Update apt cache
-      ansible.builtin.apt:
+    - name: Update apt cache manually
+      apt:
         update_cache: yes
         cache_valid_time: "{{ cache_time }}"
 
-    - name: Install required packages
-      ansible.builtin.apt:
-        name:
-          - "{{ docker_package_name }}"
-          - docker-compose
-          - curl
-          - unzip
+    - name: Install Docker
+      apt:
+        name: "{{ docker_package_name }}"
+        update_cache: yes
         state: present
-
-    - name: Ensure Docker service is started and enabled
-      ansible.builtin.systemd:
+    - name: Install Docker-compose
+      apt:
+        name: docker-compose
+        state: present
+    - name: Ensure Docker service is started
+      systemd:
         name: "{{ docker_service_name }}"
         state: started
         enabled: yes
+    - name: Check Docker version
+      command: docker --version
+      register: docker_version_output
 
-    - name: Add ubuntu user to Docker group
-      ansible.builtin.user:
+    - name: Display Docker version
+      debug:
+        msg: "Docker version: {{ docker_version_output.stdout }}"
+
+    - name: Check Docker Compose version
+      command: docker-compose --version
+      register: docker_compose_version_output
+
+    - name: Display Docker Compose version
+      debug:
+        msg: "Docker Compose version: {{ docker_compose_version_output.stdout }}"
+
+    - name: Add ubuntu user to docker group
+      user:
         name: ubuntu
         groups: docker
         append: yes
 
-    - name: Reset connection to apply user group changes
+    - name: Reconnect to server session
       meta: reset_connection
+- name: Install AWS CLI on EC2 Instances
+  hosts: servers
+  become: yes
+  tasks:
+    - name: Ensure curl is installed
+      package:
+        name: curl
+        state: present
 
-    - name: Check Docker version
-      ansible.builtin.command: docker --version
-      register: docker_version_output
+    - name: Ensure unzip is installed
+      package:
+        name: unzip
+        state: present
 
-    - name: Display Docker version
-      ansible.builtin.debug:
-        msg: "Docker version: {{ docker_version_output.stdout }}"
+    - name: Check if AWS CLI is installed
+      command: "aws --version"
+      register: aws_cli_check
+      ignore_errors: true
 
-    - name: Install AWS CLI if not already installed
-      block:
-        - name: Check if AWS CLI is installed
-          ansible.builtin.command: aws --version
-          register: aws_cli_check
-          ignore_errors: yes
+    - name: Download AWS CLI installation script using curl
+      command: curl -o /tmp/awscliv2.zip https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+      when: aws_cli_check.failed
 
-        - name: Download AWS CLI installer
-          ansible.builtin.get_url:
-            url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
-            dest: /tmp/awscliv2.zip
-          when: aws_cli_check.failed
+    - name: Unzip AWS CLI installation package
+      unarchive:
+        src: "/tmp/awscliv2.zip"
+        dest: "/tmp/"
+        remote_src: yes
+      when: aws_cli_check.failed
 
-        - name: Unzip AWS CLI installer
-          ansible.builtin.unarchive:
-            src: /tmp/awscliv2.zip
-            dest: /tmp/
-            remote_src: yes
-          when: aws_cli_check.failed
+    - name: Run AWS CLI installer
+      command: "/tmp/aws/install -i /usr/local/aws-cli -b /usr/local/bin --update"
+      when: aws_cli_check.failed
 
-        - name: Run AWS CLI installer
-          ansible.builtin.command: /tmp/aws/install -i /usr/local/aws-cli -b /usr/local/bin
-          when: aws_cli_check.failed
+    - name: Verify AWS CLI installation
+      command: "aws --version"
+      register: aws_cli_version
 
-      always:
-        - name: Verify AWS CLI installation
-          ansible.builtin.command: aws --version
-          register: aws_cli_version
+    - debug:
+        msg: "AWS CLI version: {{ aws_cli_version.stdout }}"
 
-        - name: Display AWS CLI version
-          ansible.builtin.debug:
-            msg: "AWS CLI version: {{ aws_cli_version.stdout }}"
 
-# Pull Docker images and configure containers
-- name: Pull Docker images and configure containers
+- name: Pull Docker image for the frontend from ECR to EC2 instance
   hosts: servers
   become: yes
   vars_files:
     - ansible-vars.yaml
-
   tasks:
     - name: Log in to Amazon ECR
       shell: |
@@ -105,32 +120,50 @@
       args:
         executable: /bin/bash
 
-    - name: Pull Docker images
-      ansible.builtin.docker_image:
+#    - name: Log in to Amazon ECR
+#      docker_login:
+#        registry_url: "{{ ecr_url }}"
+#        username: AWS
+#        password: "{{ lookup('pipe', 'aws ecr get-login-password --region ' + region) }}"
+#        reauthorize: yes
+
+    - name: Pull frontend Docker image from ECR
+      docker_image:
         name: "{{ ecr_url }}/{{ ecr_repository }}"
-        tag: "{{ item }}"
+        tag: "{{ frontend_image_tag }}"
         source: pull
-      loop:
-        - "{{ frontend_image_tag }}"
-        - "{{ backend_image_tag }}"
-
-    - name: Display pulled Docker images
-      ansible.builtin.command: docker images
+        force_source: yes
+    - name: Pull backend Docker image from ECR
+      docker_image:
+        name: "{{ ecr_url }}/{{ ecr_repository }}"
+        tag: "{{ backend_image_tag }}"
+        source: pull
+        force_source: yes
+    - name: Display Docker images on the host
+      command: docker images
       register: docker_images_output
-
     - name: Show Docker images
-      ansible.builtin.debug:
+      debug:
         msg: "{{ docker_images_output.stdout }}"
 
-    - name: Create Docker network
-      community.docker.docker_network:
+
+- name: Start Docker containers
+  hosts: servers
+  become: yes
+  vars_files:
+    - ansible-vars.yaml
+
+  tasks:
+    - name: Create Docker Network
+      docker_network:
         name: "{{ docker_network_name }}"
         state: present
 
-    - name: Copy Docker Compose file to the server
-      ansible.builtin.copy:
+    - name: Copy Docker Compose file to the EC2 instance
+      copy:
         src: "{{ compose_local_path }}"
         dest: "{{ compose_remote_path }}"
+
 
     - name: Start Docker containers from Docker Compose
       shell: |
@@ -139,10 +172,20 @@
         chdir: "{{ project_src_path }}"
 
 
-    - name: Run migrations in the backend container
-      block:
-        - name: Make migrations
-          ansible.builtin.command: docker exec {{ backend_container_name }} python manage.py makemigrations
+#    - name: Start Docker containers from Docker Compose
+#      docker_compose:
+#        project_src: "{{ project_src_path }}"
+#        state: present  # "present" is equivalent to "docker-compose up", "absent" would stop the containers.
 
-        - name: Apply migrations
-          ansible.builtin.command: docker exec {{ backend_container_name }} python manage.py migrate
+    - name: Run makemigrations inside backend container
+      command: docker exec {{ backend_container_name }} python manage.py makemigrations
+
+    - name: Run migrate inside backend container
+      command: docker exec {{ backend_container_name }} python manage.py migrate
+    - name: Create superuser inside backend container
+      command: >
+        docker exec {{ backend_container_name }} python manage.py shell -c
+        "from django.contrib.auth import get_user_model;
+        User = get_user_model();
+        User.objects.filter(username='{{ superuser_username }}').exists() or
+        User.objects.create_superuser('{{ superuser_username }}', '{{ superuser_email }}', '{{ superuser_password }}')"
