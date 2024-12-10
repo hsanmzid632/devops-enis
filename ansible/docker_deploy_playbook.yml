@@ -132,10 +132,12 @@
         src: "{{ compose_local_path }}"
         dest: "{{ compose_remote_path }}"
 
-    - name: Start Docker containers using Docker Compose
-      community.docker.docker_compose:
-        project_src: "{{ project_src_path }}"
-        state: present
+    - name: Start Docker containers from Docker Compose
+      shell: |
+        docker-compose up -d
+      args:
+        chdir: "{{ project_src_path }}"
+
 
     - name: Run migrations in the backend container
       block:
