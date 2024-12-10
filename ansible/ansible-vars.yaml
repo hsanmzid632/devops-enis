@@ -11,7 +11,7 @@ backend_image_tag: "backend1.0"
 # docker variables
 docker_network_name: "my_bridge"
 compose_local_path: "/var/lib/jenkins/workspace/deploy_note_app/ansible/docker-compose.yaml" #replace with your local path of the updated file
-compose_remote_path: "/home/ubuntu/docker-compose.yaml"
+compose_remote_path: "/home/ubuntu/docker-compose.yml"
 project_src_path: "/home/ubuntu"
 backend_container_name: "backend-app"
 # app credentials
